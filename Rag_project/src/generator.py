@@ -61,7 +61,7 @@ def generate_answer_stream(question: str, chunks: list):
         "\'The answer could not be found in the provided documents.\'"
     )
     try:
-        response = _GENERAL_MODEL.generate_content(
+        response = _MODEL.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
             stream=True,

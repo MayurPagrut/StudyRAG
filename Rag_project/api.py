@@ -1,6 +1,6 @@
 import json
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -9,6 +9,7 @@ import tempfile
 
 
 from src.database import delete_document, get_cursor
+from src.config import config
 from src.rag import run_hybrid_query, stream_hybrid_query
 from scripts.ingest import ingest_single_pdf
 
@@ -24,6 +25,15 @@ app = FastAPI(
 )
 
 
+def require_service_auth(authorization: str | None = Header(default=None)):
+    if not config.rag_require_service_auth:
+        return
+    if not config.rag_service_token:
+        raise HTTPException(status_code=503, detail="RAG service authentication is not configured.")
+    if authorization != f"Bearer {config.rag_service_token}":
+        raise HTTPException(status_code=401, detail="RAG service authentication required.")
+
+
 @app.get("/health")
 def health():
     return {
@@ -31,7 +41,7 @@ def health():
     }
 
 
-@app.delete("/documents/{document_id}", status_code=204)
+@app.delete("/documents/{document_id}", status_code=204, dependencies=[Depends(require_service_auth)])
 def delete_rag_document(document_id: int):
 
     deleted = delete_document(document_id)
@@ -41,7 +51,7 @@ def delete_rag_document(document_id: int):
         return
 
     return
-@app.post("/query")
+@app.post("/query", dependencies=[Depends(require_service_auth)])
 def query_rag(request: QueryRequest):
 
     question = request.question.strip()
@@ -79,7 +89,7 @@ def query_rag(request: QueryRequest):
         )
 
 
-@app.post("/query/stream")
+@app.post("/query/stream", dependencies=[Depends(require_service_auth)])
 def query_rag_stream(request: QueryRequest):
 
     question = request.question.strip()
@@ -109,7 +119,7 @@ def query_rag_stream(request: QueryRequest):
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
     
-@app.post("/documents")
+@app.post("/documents", dependencies=[Depends(require_service_auth)])
 def upload_document(file: UploadFile = File(...)):
 
     # Only PDFs
@@ -167,7 +177,7 @@ def upload_document(file: UploadFile = File(...)):
             ignore_errors=True
         )
 
-@app.get("/documents")
+@app.get("/documents", dependencies=[Depends(require_service_auth)])
 def list_documents():
 
     with get_cursor() as cur:

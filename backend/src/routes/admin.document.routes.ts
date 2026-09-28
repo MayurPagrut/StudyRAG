@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { env } from '../config/env';
 import { documentController as c } from '../controllers/documentController';
 import { authenticate } from '../middleware/authenticate';
 import { requireAdmin } from '../middleware/requireAdmin';
@@ -9,7 +11,14 @@ import { idParamSchema, uploadMetaSchema } from '../utils/schemas';
 
 export const adminDocumentRoutes = Router();
 adminDocumentRoutes.use(authenticate, requireAdmin); // auth + role BEFORE any file is parsed
-adminDocumentRoutes.post('/', uploadPdf, validate(uploadMetaSchema), h(c.upload));
+const uploadLimiter = rateLimit({
+	windowMs: env.UPLOAD_RATE_LIMIT_WINDOW_MS,
+	limit: env.UPLOAD_RATE_LIMIT_MAX,
+	standardHeaders: true,
+	legacyHeaders: false,
+	message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many uploads. Try again later.' } },
+});
+adminDocumentRoutes.post('/', uploadLimiter, uploadPdf, validate(uploadMetaSchema), h(c.upload));
 adminDocumentRoutes.get('/', h(c.list));
 adminDocumentRoutes.get('/:id', validate(idParamSchema, 'params'), h(c.get));
 adminDocumentRoutes.delete('/:id', validate(idParamSchema, 'params'), h(c.remove));

@@ -32,12 +32,19 @@ interface PyStreamEvent {
 }
 
 export class PythonRagService implements RagService {
-  private readonly base = (env.RAG_SERVICE_URL ?? '').replace(/\/$/, '');
+  private readonly base = (env.PYTHON_RAG_URL ?? env.RAG_SERVICE_URL ?? '').replace(/\/$/, '');
+
+  private headers(contentType?: string): HeadersInit {
+    return {
+      ...(contentType ? { 'Content-Type': contentType } : {}),
+      ...(env.RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${env.RAG_SERVICE_TOKEN}` } : {}),
+    };
+  }
 
   private async call<T>(method: string, path: string, body: unknown, timeoutMs: number): Promise<T> {
     const res = await fetch(`${this.base}${path}`, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: this.headers(body ? 'application/json' : undefined),
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -51,6 +58,7 @@ export class PythonRagService implements RagService {
   private async callMultipart<T>(path: string, form: FormData, timeoutMs: number): Promise<T> {
     const res = await fetch(`${this.base}${path}`, {
       method: 'POST',
+      headers: this.headers(),
       body: form,
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -84,7 +92,7 @@ export class PythonRagService implements RagService {
     const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
     const res = await fetch(`${this.base}/query/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers('application/json'),
       body: JSON.stringify({ question: input.question, history: input.history ?? [] }),
       signal: requestSignal,
     });

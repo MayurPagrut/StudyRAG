@@ -19,13 +19,22 @@ def _require(key: str) -> str:
     return value
 
 
+def _as_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class Config:
+    node_env:             str = field(default_factory=lambda: os.getenv("NODE_ENV", "development"))
     # ── Database (Supabase PostgreSQL) ───────────────────
     database_url:        str = field(default_factory=lambda: _require("DATABASE_URL"))
 
     # ── Google Gemini API ────────────────────────────────
     gemini_api_key:      str = field(default_factory=lambda: _require("GEMINI_API_KEY"))
+    rag_service_token:   str = field(default_factory=lambda: os.getenv("RAG_SERVICE_TOKEN", ""))
+    rag_require_service_auth: bool = field(default_factory=lambda: _as_bool(os.getenv(
+        "RAG_REQUIRE_SERVICE_AUTH", "true" if os.getenv("NODE_ENV", "development") == "production" else "false"
+    )))
 
     # ── Embedding Model (gemini-embedding-2, 768 dimensions)
     embedding_model:     str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "gemini-embedding-2"))
