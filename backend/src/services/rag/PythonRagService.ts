@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { env } from '../../config/env';
 import { documentRepository } from '../../repositories/documentRepository';
-import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource, RagStreamEvent } from './RagService';
+import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource, RagStreamEvent, SourceMode } from './RagService';
 
 /**
  * HTTP adapter for the existing Python RAG (RAG_MODE=real).
@@ -16,6 +16,7 @@ import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryR
  */
 interface PyQueryResponse {
   answer: string;
+  sourceMode?: SourceMode;
   sources?: { document_id?: number | string; filename: string; page_number: number; chunk_id?: number | string; similarity?: number }[];
 }
 interface PyIngestResponse {
@@ -23,7 +24,8 @@ interface PyIngestResponse {
   pages?: number;
 }
 interface PyStreamEvent {
-  type: 'token' | 'sources' | 'error' | 'done';
+  type: 'token' | 'sources' | 'source_mode' | 'error' | 'done';
+  source_mode?: SourceMode;
   text?: string;
   message?: string;
   sources?: { document_id?: number | string; filename: string; page_number: number; chunk_id?: number | string; similarity?: number }[];
@@ -74,7 +76,7 @@ export class PythonRagService implements RagService {
         similarity: s.similarity,
       });
     }
-    return { answer: data.answer, sources };
+    return { answer: data.answer, sources, sourceMode: data.sourceMode ?? 'rag' };
   }
 
   async *streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent> {
@@ -105,6 +107,7 @@ export class PythonRagService implements RagService {
         if (!line.trim()) continue;
         const event = JSON.parse(line) as PyStreamEvent;
         if (event.type === 'error') throw new Error(event.message ?? 'RAG streaming failed');
+        if (event.type === 'source_mode' && event.source_mode) yield { type: 'source_mode', source_mode: event.source_mode };
         if (event.type === 'token' && event.text) yield { type: 'token', text: event.text };
         if (event.type === 'sources') {
           const sources: RagSource[] = [];

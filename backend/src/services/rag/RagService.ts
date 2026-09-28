@@ -9,6 +9,7 @@
 import { MessageRecord, RagSource } from '../../types';
 
 export type { RagSource };
+export type SourceMode = 'rag' | 'llm' | 'hybrid';
 
 export interface RagQueryInput {
   question: string;
@@ -19,11 +20,13 @@ export interface RagQueryInput {
 export interface RagQueryResult {
   answer: string;
   sources: RagSource[];
+  sourceMode: SourceMode;
 }
 
 export type RagStreamEvent =
   | { type: 'token'; text: string }
-  | { type: 'sources'; sources: RagSource[] };
+  | { type: 'sources'; sources: RagSource[] }
+  | { type: 'source_mode'; source_mode: SourceMode };
 
 export interface RagIngestInput {
   /** App document id (app.documents.id, UUID). */

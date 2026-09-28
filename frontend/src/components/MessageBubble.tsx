@@ -15,8 +15,16 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   }
   const sources = message.sources ?? [];
   const answer = removeInlineSourceMarkers(message.content);
+  const origin = message.sourceMode === 'rag'
+    ? '📚 From uploaded material'
+    : message.sourceMode === 'llm'
+      ? '🤖 General AI knowledge'
+      : message.sourceMode === 'hybrid'
+        ? '📚 + 🤖 Uploaded material + General AI'
+        : null;
   return (
     <article className="max-w-[46rem]">
+      {origin && <p className="mb-2 text-sm font-medium text-muted" aria-label="Answer origin">{origin}</p>}
       <p className="whitespace-pre-wrap break-words font-serif text-[1.05rem] leading-relaxed">{answer}</p>
       {sources.length > 0 && (
         <section className="mt-4" aria-label="Sources">

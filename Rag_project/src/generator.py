@@ -15,6 +15,11 @@ _SYSTEM = (
 )
 
 _MODEL = genai.GenerativeModel(model_name=config.llm_model, system_instruction=_SYSTEM)
+_GENERAL_SYSTEM = (
+    "You are a helpful general knowledge assistant. Answer the user's question accurately using general knowledge. "
+    "Do not claim that general knowledge came from uploaded documents and do not invent document citations."
+)
+_GENERAL_MODEL = genai.GenerativeModel(model_name=config.llm_model, system_instruction=_GENERAL_SYSTEM)
 
 
 def _context_block(chunks: list) -> str:
@@ -56,7 +61,83 @@ def generate_answer_stream(question: str, chunks: list):
         "\'The answer could not be found in the provided documents.\'"
     )
     try:
+        response = _GENERAL_MODEL.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
+            stream=True,
+        )
+        for chunk in response:
+            try:
+                text = chunk.text
+            except ValueError:
+                text = ""
+            if text:
+                yield text
+    except Exception as exc:
+        raise RuntimeError(f"LLM API failed: {exc}\nCheck GEMINI_API_KEY and LLM_MODEL in .env.") from exc
+
+
+def generate_general_answer(question: str) -> str:
+    prompt = (
+        "The uploaded documents did not contain sufficiently relevant information for this question. "
+        "Answer using your general knowledge. Do not claim that the answer came from the uploaded documents "
+        "and do not include document citations.\n\n"
+        f"QUESTION: {question}"
+    )
+    try:
+        response = _GENERAL_MODEL.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
+        )
+        return response.text.strip()
+    except Exception as exc:
+        raise RuntimeError(f"LLM API failed: {exc}\nCheck GEMINI_API_KEY and LLM_MODEL in .env.") from exc
+
+
+def generate_hybrid_answer(question: str, chunks: list) -> str:
+    prompt = (
+        "Answer using the retrieved document passages where they directly support the answer. "
+        "Use general knowledge only to fill genuine gaps. Clearly distinguish information supported by "
+        "the uploaded material from general knowledge. Never claim general knowledge came from the documents "
+        "and never invent document citations.\n\n"
+        f"RETRIEVED DOCUMENT PASSAGES:\n{_context_block(chunks)}\n\n"
+        f"QUESTION: {question}"
+    )
+    try:
         response = _MODEL.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
+        )
+        return response.text.strip()
+    except Exception as exc:
+        raise RuntimeError(f"LLM API failed: {exc}\nCheck GEMINI_API_KEY and LLM_MODEL in .env.") from exc
+
+
+def generate_general_answer_stream(question: str):
+    prompt = (
+        "The uploaded documents did not contain sufficiently relevant information for this question. "
+        "Answer using your general knowledge. Do not claim that the answer came from the uploaded documents "
+        "and do not include document citations.\n\n"
+        f"QUESTION: {question}"
+    )
+    yield from _generate_stream(prompt, _GENERAL_MODEL)
+
+
+def generate_hybrid_answer_stream(question: str, chunks: list):
+    prompt = (
+        "Answer using the retrieved document passages where they directly support the answer. "
+        "Use general knowledge only to fill genuine gaps. Clearly distinguish information supported by "
+        "the uploaded material from general knowledge. Never claim general knowledge came from the documents "
+        "and never invent document citations.\n\n"
+        f"RETRIEVED DOCUMENT PASSAGES:\n{_context_block(chunks)}\n\n"
+        f"QUESTION: {question}"
+    )
+    yield from _generate_stream(prompt, _GENERAL_MODEL)
+
+
+def _generate_stream(prompt: str, model):
+    try:
+        response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
             stream=True,

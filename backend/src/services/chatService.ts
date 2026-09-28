@@ -3,7 +3,7 @@ import { messageRepository } from '../repositories/messageRepository';
 import { ragService } from './rag';
 import { RagSource, User } from '../types';
 import { AppError } from '../utils/AppError';
-import { RagStreamEvent } from './rag/RagService';
+import { RagStreamEvent, SourceMode } from './rag/RagService';
 
 const HISTORY_LIMIT = 10;
 const DEFAULT_TITLE = 'New chat';
@@ -11,9 +11,10 @@ const makeTitle = (q: string) => (q.length > 60 ? `${q.slice(0, 57).trimEnd()}..
 
 export type ChatStreamEvent =
   | { type: 'start'; conversationId: string; userMessage: { id: string; role: 'user'; content: string; createdAt: string } }
+  | { type: 'source_mode'; source_mode: SourceMode }
   | { type: 'token'; text: string }
   | { type: 'sources'; sources: RagSource[] }
-  | { type: 'done'; conversationId: string; message: { id: string; role: 'assistant'; content: string; createdAt: string }; sources: RagSource[] };
+  | { type: 'done'; conversationId: string; message: { id: string; role: 'assistant'; content: string; createdAt: string }; sources: RagSource[]; sourceMode: SourceMode };
 
 export const chatService = {
   async sendMessage(user: User, input: { conversationId?: string | null; question: string }) {
@@ -60,6 +61,7 @@ export const chatService = {
       userMessage: { id: userMessage.id, role: userMessage.role, content: userMessage.content, createdAt: userMessage.createdAt },
       message: { id: assistant.id, role: assistant.role, content: assistant.content, createdAt: assistant.createdAt },
       sources: result.sources,
+      sourceMode: result.sourceMode,
     };
   },
 
@@ -84,6 +86,7 @@ export const chatService = {
     let assistantCreated = false;
     let answer = '';
     let sources: RagSource[] = [];
+    let sourceMode: SourceMode = 'rag';
 
     try {
       yield {
@@ -100,6 +103,9 @@ export const chatService = {
         if (signal?.aborted) throw new Error('Streaming request cancelled');
         if (event.type === 'token') {
           answer += event.text;
+          yield event;
+        } else if (event.type === 'source_mode') {
+          sourceMode = event.source_mode;
           yield event;
         } else {
           sources = event.sources;
@@ -119,6 +125,7 @@ export const chatService = {
         conversationId: conversation.id,
         message: { id: assistant.id, role: 'assistant', content: assistant.content, createdAt: assistant.createdAt },
         sources,
+        sourceMode,
       };
     } catch (err) {
       if (err instanceof AppError) throw err;

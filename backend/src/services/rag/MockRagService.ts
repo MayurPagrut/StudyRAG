@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { env } from '../../config/env';
 import { documentRepository } from '../../repositories/documentRepository';
-import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService } from './RagService';
+import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, SourceMode } from './RagService';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -23,20 +23,22 @@ export class MockRagService implements RagService {
         return {
           answer,
           sources: [{ documentId: doc.id, documentName: doc.filename, page: 1, chunkId: 'mock-chunk', similarity: 0.5 }],
+          sourceMode: 'rag',
         };
       }
     }
-    return { answer, sources: [] };
+    return { answer, sources: [], sourceMode: 'llm' };
   }
 
   async *streamQuery(input: RagQueryInput, signal?: AbortSignal) {
     const result = await this.query(input);
+    yield { type: 'source_mode' as const, source_mode: result.sourceMode as SourceMode };
     for (const text of result.answer.match(/.{1,24}/g) ?? []) {
       if (signal?.aborted) throw new Error('Streaming request cancelled');
       await sleep(30);
       yield { type: 'token' as const, text };
     }
-    if (result.sources.length > 0) yield { type: 'sources' as const, sources: result.sources };
+    yield { type: 'sources' as const, sources: result.sources };
   }
 
   /** Simulates ~3s of processing. A filename containing "fail" simulates an ingestion failure. */

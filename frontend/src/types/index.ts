@@ -16,20 +16,24 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   sources?: Source[];
+  sourceMode?: SourceMode;
 }
+export type SourceMode = 'rag' | 'llm' | 'hybrid';
 export interface ChatRequest { conversationId: string | null; question: string }
 export interface ChatResponse {
   conversationId: string;
   userMessage: ChatMessage;
   message: ChatMessage;
   sources: Source[];
+  sourceMode: SourceMode;
 }
 
 export type ChatStreamEvent =
   | { type: 'start'; conversationId: string; userMessage: ChatMessage }
+  | { type: 'source_mode'; source_mode: SourceMode }
   | { type: 'token'; text: string }
   | { type: 'sources'; sources: Source[] }
-  | { type: 'done'; conversationId: string; message: ChatMessage; sources: Source[] }
+  | { type: 'done'; conversationId: string; message: ChatMessage; sources: Source[]; sourceMode: SourceMode }
   | { type: 'error'; message: string };
 
 export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string }

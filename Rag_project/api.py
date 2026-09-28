@@ -9,9 +9,7 @@ import tempfile
 
 
 from src.database import delete_document, get_cursor
-from src.generator import generate_answer_stream
-from src.retriever import retrieve
-from src.rag import run_rag_query
+from src.rag import run_hybrid_query, stream_hybrid_query
 from scripts.ingest import ingest_single_pdf
 
 class QueryRequest(BaseModel):
@@ -61,29 +59,16 @@ def query_rag(request: QueryRequest):
         )
 
     try:
-        result = run_rag_query(
+        result = run_hybrid_query(
             question=question,
             top_k=request.top_k,
-            show_retrieval=False
         )
-
-        answer = result["answer"]
-        not_found = "answer could not be found in the provided documents" in answer.lower()
-        sources = [] if not_found else [
-            {
-                "document_id": chunk.document_id,
-                "filename": chunk.filename,
-                "page_number": chunk.page_number,
-                "chunk_id": chunk.chunk_id,
-                "similarity": chunk.similarity,
-            }
-            for chunk in result["chunks"]
-        ]
 
         return {
             "question": result["question"],
-            "answer": answer,
-            "sources": sources
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "sourceMode": result["sourceMode"],
         }
 
     except Exception as exc:
@@ -111,35 +96,12 @@ def query_rag_stream(request: QueryRequest):
             detail="top_k must be between 1 and 20."
         )
 
-    try:
-        chunks = retrieve(question, top_k=request.top_k)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"RAG query failed: {exc}"
-        )
+    query_stream = stream_hybrid_query(question, top_k=request.top_k)
 
     def events():
-        answer_parts = []
         try:
-            for text in generate_answer_stream(question, chunks):
-                answer_parts.append(text)
-                yield json.dumps({"type": "token", "text": text}, ensure_ascii=False) + "\n"
-
-            answer = "".join(answer_parts)
-            not_found = "answer could not be found in the provided documents" in answer.lower()
-            sources = [] if not_found else [
-                {
-                    "document_id": chunk.document_id,
-                    "filename": chunk.filename,
-                    "page_number": chunk.page_number,
-                    "chunk_id": chunk.chunk_id,
-                    "similarity": chunk.similarity,
-                }
-                for chunk in chunks
-            ]
-            yield json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False) + "\n"
-            yield json.dumps({"type": "done"}) + "\n"
+            for event in query_stream:
+                yield json.dumps(event, ensure_ascii=False) + "\n"
         except GeneratorExit:
             return
         except Exception as exc:

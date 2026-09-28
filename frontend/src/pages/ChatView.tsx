@@ -65,7 +65,11 @@ export default function ChatView() {
           return;
         }
         if (activeId.current !== targetConversationId) return;
-        if (event.type === 'token') {
+        if (event.type === 'source_mode') {
+          setMessages((m) => m.map((message) => message.id === assistantId
+            ? { ...message, sourceMode: event.source_mode }
+            : message));
+        } else if (event.type === 'token') {
           setMessages((m) => m.map((message) => message.id === assistantId
             ? { ...message, content: message.content + event.text }
             : message));
@@ -74,7 +78,7 @@ export default function ChatView() {
         } else if (event.type === 'done') {
           completed = true;
           setMessages((m) => m.map((message) => message.id === assistantId
-            ? { ...event.message, sources: pendingSources }
+            ? { ...event.message, sources: pendingSources, sourceMode: event.sourceMode }
             : message));
         }
       });

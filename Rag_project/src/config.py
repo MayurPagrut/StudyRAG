@@ -36,6 +36,10 @@ class Config:
 
     # ── Retrieval Settings ───────────────────────────────
     top_k:               int = field(default_factory=lambda: int(os.getenv("TOP_K", "5")))
+    hybrid_rag_strong_threshold: float = field(default_factory=lambda: float(os.getenv("HYBRID_RAG_STRONG_THRESHOLD", "0.70")))
+    hybrid_rag_weak_threshold:   float = field(default_factory=lambda: float(os.getenv("HYBRID_RAG_WEAK_THRESHOLD", "0.52")))
+    hybrid_min_relevant_chunks:  int = field(default_factory=lambda: int(os.getenv("HYBRID_MIN_RELEVANT_CHUNKS", "1")))
+    hybrid_min_context_coverage: float = field(default_factory=lambda: float(os.getenv("HYBRID_MIN_CONTEXT_COVERAGE", "0.20")))
 
     # ── Chunking Settings ────────────────────────────────
     chunk_size:          int = field(default_factory=lambda: int(os.getenv("CHUNK_SIZE", "600")))
