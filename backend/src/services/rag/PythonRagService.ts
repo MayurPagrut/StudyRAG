@@ -1,0 +1,89 @@
+import { promises as fs } from 'fs';
+import { env } from '../../config/env';
+import { documentRepository } from '../../repositories/documentRepository';
+import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource } from './RagService';
+
+/**
+ * HTTP adapter for the existing Python RAG (RAG_MODE=real).
+ *
+ * The Python side needs a thin wrapper (e.g. FastAPI) exposing the 3 endpoints below;
+ * the exact JSON is documented in API.md ("RAG service contract"). If your wrapper's
+ * field names differ, adjust ONLY the mapping in this file.
+ *
+ *   POST   {RAG_SERVICE_URL}/query               { question, history[] }            -> { answer, sources[] }
+ *   POST   {RAG_SERVICE_URL}/documents           multipart/form-data (file) -> { document_id, pages }
+ *   DELETE {RAG_SERVICE_URL}/documents/{ragId}   -> 204
+ */
+interface PyQueryResponse {
+  answer: string;
+  sources?: { document_id?: number | string; filename: string; page_number: number; chunk_id?: number | string; similarity?: number }[];
+}
+interface PyIngestResponse {
+  document_id?: number | string;
+  pages?: number;
+}
+
+export class PythonRagService implements RagService {
+  private readonly base = (env.RAG_SERVICE_URL ?? '').replace(/\/$/, '');
+
+  private async call<T>(method: string, path: string, body: unknown, timeoutMs: number): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`RAG service ${method} ${path} failed with ${res.status}: ${detail.slice(0, 300)}`);
+    }
+    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  }
+
+  private async callMultipart<T>(path: string, form: FormData, timeoutMs: number): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`RAG service POST ${path} failed with ${res.status}: ${detail.slice(0, 300)}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  async query(input: RagQueryInput): Promise<RagQueryResult> {
+    const data = await this.call<PyQueryResponse>('POST', '/query', { question: input.question, history: input.history ?? [] }, env.RAG_TIMEOUT_MS);
+
+    const sources: RagSource[] = [];
+    for (const s of data.sources ?? []) {
+      // Map the RAG's integer document id back to the app document (UUID) when we can.
+      const appDoc = s.document_id !== undefined ? await documentRepository.findByRagDocumentId(String(s.document_id)) : null;
+      sources.push({
+        documentId: appDoc?.id ?? String(s.document_id ?? ''),
+        documentName: s.filename,
+        page: s.page_number,
+        chunkId: s.chunk_id !== undefined ? String(s.chunk_id) : undefined,
+        similarity: s.similarity,
+      });
+    }
+    return { answer: data.answer, sources };
+  }
+
+  async ingestDocument(input: RagIngestInput): Promise<RagIngestResult> {
+    const file = await fs.readFile(input.filePath);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(file)], { type: 'application/pdf' }), input.filename);
+    const data = await this.callMultipart<PyIngestResponse>('/documents', form, env.RAG_INGEST_TIMEOUT_MS);
+    return {
+      ragDocumentId: data.document_id !== undefined ? String(data.document_id) : undefined,
+      pageCount: data.pages,
+    };
+  }
+
+  async deleteDocument(_documentId: string, ref?: RagDeleteRef): Promise<void> {
+    if (!ref?.ragDocumentId) return; // never ingested into the RAG: nothing to remove
+    await this.call<void>('DELETE', `/documents/${encodeURIComponent(ref.ragDocumentId)}`, undefined, env.RAG_TIMEOUT_MS);
+  }
+}
