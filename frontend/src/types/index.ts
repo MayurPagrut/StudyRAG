@@ -25,6 +25,13 @@ export interface ChatResponse {
   sources: Source[];
 }
 
+export type ChatStreamEvent =
+  | { type: 'start'; conversationId: string; userMessage: ChatMessage }
+  | { type: 'token'; text: string }
+  | { type: 'sources'; sources: Source[] }
+  | { type: 'done'; conversationId: string; message: ChatMessage; sources: Source[] }
+  | { type: 'error'; message: string };
+
 export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string }
 
 export type DocumentStatus = 'uploading' | 'processing' | 'ready' | 'failed' | 'deleting';

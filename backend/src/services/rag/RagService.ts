@@ -21,6 +21,10 @@ export interface RagQueryResult {
   sources: RagSource[];
 }
 
+export type RagStreamEvent =
+  | { type: 'token'; text: string }
+  | { type: 'sources'; sources: RagSource[] };
+
 export interface RagIngestInput {
   /** App document id (app.documents.id, UUID). */
   documentId: string;
@@ -43,6 +47,7 @@ export interface RagDeleteRef {
 
 export interface RagService {
   query(input: RagQueryInput): Promise<RagQueryResult>;
+  streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent>;
   ingestDocument(input: RagIngestInput): Promise<RagIngestResult>;
   deleteDocument(documentId: string, ref?: RagDeleteRef): Promise<void>;
 }

@@ -42,7 +42,7 @@ export function UploadDropzone({ onUpload }: { onUpload: (file: File, meta: Uplo
           className={`grid place-items-center rounded-md border-2 border-dashed px-4 py-10 text-center ${dragging ? 'border-moss bg-sage' : 'border-rule'}`}>
           <Icon name="upload" className="size-7 text-moss" />
           <p className="mt-2 font-medium">Drag a PDF here</p>
-          <p className="text-sm text-muted">or <button type="button" onClick={() => inputRef.current?.click()} className="font-medium text-moss underline">choose a file</button> (up to {MAX_MB} MB)</p>
+          <p className="text-sm text-muted">or <button type="button" onClick={() => inputRef.current?.click()} className="font-medium text-moss underline">Choose PDF</button> (up to {MAX_MB} MB)</p>
         </div>
       ) : (
         <div className="space-y-3">

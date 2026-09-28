@@ -29,6 +29,16 @@ export class MockRagService implements RagService {
     return { answer, sources: [] };
   }
 
+  async *streamQuery(input: RagQueryInput, signal?: AbortSignal) {
+    const result = await this.query(input);
+    for (const text of result.answer.match(/.{1,24}/g) ?? []) {
+      if (signal?.aborted) throw new Error('Streaming request cancelled');
+      await sleep(30);
+      yield { type: 'token' as const, text };
+    }
+    if (result.sources.length > 0) yield { type: 'sources' as const, sources: result.sources };
+  }
+
   /** Simulates ~3s of processing. A filename containing "fail" simulates an ingestion failure. */
   async ingestDocument(input: RagIngestInput): Promise<RagIngestResult> {
     await sleep(3000);

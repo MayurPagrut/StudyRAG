@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { env } from '../../config/env';
 import { documentRepository } from '../../repositories/documentRepository';
-import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource } from './RagService';
+import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource, RagStreamEvent } from './RagService';
 
 /**
  * HTTP adapter for the existing Python RAG (RAG_MODE=real).
@@ -21,6 +21,12 @@ interface PyQueryResponse {
 interface PyIngestResponse {
   document_id?: number | string;
   pages?: number;
+}
+interface PyStreamEvent {
+  type: 'token' | 'sources' | 'error' | 'done';
+  text?: string;
+  message?: string;
+  sources?: { document_id?: number | string; filename: string; page_number: number; chunk_id?: number | string; similarity?: number }[];
 }
 
 export class PythonRagService implements RagService {
@@ -69,6 +75,60 @@ export class PythonRagService implements RagService {
       });
     }
     return { answer: data.answer, sources };
+  }
+
+  async *streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent> {
+    const timeoutSignal = AbortSignal.timeout(env.RAG_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
+    const res = await fetch(`${this.base}/query/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: input.question, history: input.history ?? [] }),
+      signal: requestSignal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`RAG service POST /query/stream failed with ${res.status}: ${detail.slice(0, 300)}`);
+    }
+    if (!res.body) throw new Error('RAG service returned an empty streaming body');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finished = false;
+    while (!finished) {
+      const part = await reader.read();
+      buffer += decoder.decode(part.value, { stream: !part.done });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as PyStreamEvent;
+        if (event.type === 'error') throw new Error(event.message ?? 'RAG streaming failed');
+        if (event.type === 'token' && event.text) yield { type: 'token', text: event.text };
+        if (event.type === 'sources') {
+          const sources: RagSource[] = [];
+          for (const source of event.sources ?? []) {
+            const appDoc = source.document_id !== undefined
+              ? await documentRepository.findByRagDocumentId(String(source.document_id))
+              : null;
+            sources.push({
+              documentId: appDoc?.id ?? String(source.document_id ?? ''),
+              documentName: source.filename,
+              page: source.page_number,
+              chunkId: source.chunk_id !== undefined ? String(source.chunk_id) : undefined,
+              similarity: source.similarity,
+            });
+          }
+          yield { type: 'sources', sources };
+        }
+      }
+      finished = part.done;
+    }
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer) as PyStreamEvent;
+      if (event.type === 'error') throw new Error(event.message ?? 'RAG streaming failed');
+    }
   }
 
   async ingestDocument(input: RagIngestInput): Promise<RagIngestResult> {

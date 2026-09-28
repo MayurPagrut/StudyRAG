@@ -14,6 +14,8 @@ _SYSTEM = (
     "(4) Never invent facts, dates, numbers, or names not in the context."
 )
 
+_MODEL = genai.GenerativeModel(model_name=config.llm_model, system_instruction=_SYSTEM)
+
 
 def _context_block(chunks: list) -> str:
     parts = []
@@ -33,12 +35,39 @@ def generate_answer(question: str, chunks: list) -> str:
         "\'The answer could not be found in the provided documents.\'"
     )
     try:
-        model = genai.GenerativeModel(model_name=config.llm_model, system_instruction=_SYSTEM)
-        resp  = model.generate_content(
+        resp  = _MODEL.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
         )
         return resp.text.strip()
+    except Exception as exc:
+        raise RuntimeError(f"LLM API failed: {exc}\nCheck GEMINI_API_KEY and LLM_MODEL in .env.") from exc
+
+
+def generate_answer_stream(question: str, chunks: list):
+    if not chunks:
+        yield ("The answer could not be found in the provided documents.\n"
+               "(No relevant content was retrieved from the knowledge base.)")
+        return
+    prompt = (
+        f"CONTEXT PASSAGES:\n{_context_block(chunks)}\n\n---\n"
+        f"QUESTION: {question}\n\n"
+        "Answer based strictly on the context. If the answer is not present, say "
+        "\'The answer could not be found in the provided documents.\'"
+    )
+    try:
+        response = _MODEL.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=1024),
+            stream=True,
+        )
+        for chunk in response:
+            try:
+                text = chunk.text
+            except ValueError:
+                text = ""
+            if text:
+                yield text
     except Exception as exc:
         raise RuntimeError(f"LLM API failed: {exc}\nCheck GEMINI_API_KEY and LLM_MODEL in .env.") from exc
 

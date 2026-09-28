@@ -7,7 +7,7 @@ import { Spinner } from '../components/Spinner';
 import { chatApi } from '../services/chatApi';
 import { conversationApi } from '../services/conversationApi';
 import { errorMessage } from '../services/api';
-import { ChatMessage } from '../types';
+import { ChatMessage, ChatStreamEvent, Source } from '../types';
 import type { ChatLayoutContext } from './ChatLayout';
 
 export default function ChatView() {
@@ -47,19 +47,45 @@ export default function ChatView() {
     const temp: ChatMessage = { id: `pending-${Date.now()}`, role: 'user', content: question, createdAt: new Date().toISOString() };
     setError(null); setDraft(''); setSending(true);
     setMessages((m) => [...m, temp]);
+    const assistantId = `streaming-${Date.now()}`;
+    let targetConversationId = sentFrom;
+    let completed = false;
+    let pendingSources: Source[] = [];
     try {
-      const res = await chatApi.sendMessage({ conversationId: sentFrom ?? null, question });
-      if (activeId.current === sentFrom) {
-        setMessages((m) => [...m.filter((x) => x.id !== temp.id), res.userMessage, { ...res.message, sources: res.sources }]);
-        if (!sentFrom) { skipLoadFor.current = res.conversationId; navigate(`/app/chat/${res.conversationId}`); }
-      }
+      await chatApi.streamMessage({ conversationId: sentFrom ?? null, question }, (event) => {
+        if (event.type === 'start') {
+          targetConversationId = event.conversationId;
+          if (activeId.current !== sentFrom && activeId.current !== targetConversationId) return;
+          const assistant: ChatMessage = { id: assistantId, role: 'assistant', content: '', createdAt: new Date().toISOString() };
+          setMessages((m) => [...m.filter((x) => x.id !== temp.id), event.userMessage, assistant]);
+          if (!sentFrom) {
+            skipLoadFor.current = event.conversationId;
+            navigate(`/app/chat/${event.conversationId}`);
+          }
+          return;
+        }
+        if (activeId.current !== targetConversationId) return;
+        if (event.type === 'token') {
+          setMessages((m) => m.map((message) => message.id === assistantId
+            ? { ...message, content: message.content + event.text }
+            : message));
+        } else if (event.type === 'sources') {
+          pendingSources = event.sources;
+        } else if (event.type === 'done') {
+          completed = true;
+          setMessages((m) => m.map((message) => message.id === assistantId
+            ? { ...event.message, sources: pendingSources }
+            : message));
+        }
+      });
+      if (!completed) throw new Error('The answer stream ended before completion.');
       void reloadConversations();
     } catch (e) {
-      if (activeId.current === sentFrom) {
-        setMessages((m) => m.filter((x) => x.id !== temp.id));
-        setDraft(question); // give the question back so nothing is lost
-        setError(errorMessage(e));
+      if (activeId.current === sentFrom || activeId.current === targetConversationId) {
+        setMessages((m) => m.filter((x) => x.id !== temp.id && x.id !== assistantId));
       }
+      setDraft(question); // give the question back so nothing is lost
+      setError(errorMessage(e));
     } finally { setSending(false); }
   }
 

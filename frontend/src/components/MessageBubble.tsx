@@ -1,6 +1,10 @@
 import { ChatMessage } from '../types';
 import { SourceCard } from './SourceCard';
 
+function removeInlineSourceMarkers(content: string): string {
+  return content.replace(/\[\s*source\s*:[^\]]*\]/gi, '').replace(/[ \t]+\n/g, '\n').trim();
+}
+
 export function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
@@ -10,9 +14,10 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
   const sources = message.sources ?? [];
+  const answer = removeInlineSourceMarkers(message.content);
   return (
     <article className="max-w-[46rem]">
-      <p className="whitespace-pre-wrap break-words font-serif text-[1.05rem] leading-relaxed">{message.content}</p>
+      <p className="whitespace-pre-wrap break-words font-serif text-[1.05rem] leading-relaxed">{answer}</p>
       {sources.length > 0 && (
         <section className="mt-4" aria-label="Sources">
           <h3 className="mb-2 text-sm font-semibold text-muted">Sources</h3>

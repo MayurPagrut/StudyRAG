@@ -1,4 +1,7 @@
+import json
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 import shutil
@@ -6,6 +9,8 @@ import tempfile
 
 
 from src.database import delete_document, get_cursor
+from src.generator import generate_answer_stream
+from src.retriever import retrieve
 from src.rag import run_rag_query
 from scripts.ingest import ingest_single_pdf
 
@@ -87,6 +92,60 @@ def query_rag(request: QueryRequest):
             status_code=500,
             detail=f"RAG query failed: {exc}"
         )
+
+
+@app.post("/query/stream")
+def query_rag_stream(request: QueryRequest):
+
+    question = request.question.strip()
+
+    if not question:
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty."
+        )
+
+    if request.top_k < 1 or request.top_k > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="top_k must be between 1 and 20."
+        )
+
+    try:
+        chunks = retrieve(question, top_k=request.top_k)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"RAG query failed: {exc}"
+        )
+
+    def events():
+        answer_parts = []
+        try:
+            for text in generate_answer_stream(question, chunks):
+                answer_parts.append(text)
+                yield json.dumps({"type": "token", "text": text}, ensure_ascii=False) + "\n"
+
+            answer = "".join(answer_parts)
+            not_found = "answer could not be found in the provided documents" in answer.lower()
+            sources = [] if not_found else [
+                {
+                    "document_id": chunk.document_id,
+                    "filename": chunk.filename,
+                    "page_number": chunk.page_number,
+                    "chunk_id": chunk.chunk_id,
+                    "similarity": chunk.similarity,
+                }
+                for chunk in chunks
+            ]
+            yield json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False) + "\n"
+            yield json.dumps({"type": "done"}) + "\n"
+        except GeneratorExit:
+            return
+        except Exception as exc:
+            yield json.dumps({"type": "error", "message": str(exc)[:500]}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
     
 @app.post("/documents")
 def upload_document(file: UploadFile = File(...)):

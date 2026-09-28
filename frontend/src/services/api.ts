@@ -49,6 +49,30 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   postForm: <T>(path: string, form: FormData) => request<T>('POST', path, form),
   delete: <T>(path: string) => request<T>('DELETE', path),
+  async stream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+    let res: Response;
+    const token = tokenStore.get();
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch {
+      throw new ApiError('NETWORK_ERROR', 'Cannot reach the server. Check your connection and try again.', 0);
+    }
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      if (res.status === 401 && token) { tokenStore.clear(); onUnauthorized?.(); }
+      throw new ApiError(json?.error?.code ?? 'UNKNOWN_ERROR', json?.error?.message ?? `Request failed (${res.status})`, res.status);
+    }
+    if (!res.body) throw new ApiError('EMPTY_STREAM', 'The answer service returned an empty response.', res.status);
+    return res;
+  },
 };
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');

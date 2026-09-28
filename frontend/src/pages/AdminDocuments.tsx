@@ -13,10 +13,12 @@ export default function AdminDocuments() {
   const [toDelete, setToDelete] = useState<DocumentItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   async function upload(file: File, meta: UploadMeta) {
     await documentApi.upload(file, meta);
     await reload();
+    setUploadMessage(`"${file.name}" was uploaded and is now being processed.`);
   }
 
   async function confirmDelete() {
@@ -29,10 +31,27 @@ export default function AdminDocuments() {
 
   return (
     <>
-      <h1 className="font-serif text-2xl font-semibold">Documents</h1>
+      <header>
+        <p className="text-sm font-medium uppercase tracking-wide text-moss-dark">Knowledge base</p>
+        <h1 className="mt-1 font-serif text-3xl font-semibold">Document Management</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+          Upload and manage the PDF documents used as knowledge sources for the RAG system.
+        </p>
+      </header>
       <div className="mt-6"><UploadDropzone onUpload={upload} /></div>
+      {uploadMessage && (
+        <p role="status" className="mt-3 rounded bg-sage px-4 py-3 text-sm text-moss-dark" aria-live="polite">
+          {uploadMessage}
+        </p>
+      )}
 
-      <h2 className="mb-3 mt-10 font-serif text-lg font-semibold">All documents</h2>
+      <div className="mb-3 mt-10 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="font-serif text-lg font-semibold">All documents</h2>
+          <p className="mt-1 text-sm text-muted">Track processing status, metadata, and indexed files.</p>
+        </div>
+        {!loading && !error && <span className="text-sm text-muted">{documents.length} {documents.length === 1 ? 'document' : 'documents'}</span>}
+      </div>
       {loading && <Spinner label="Loading documents" />}
       {error && (
         <p role="alert" className="rounded bg-danger-tint px-4 py-3 text-sm text-danger">
@@ -40,7 +59,10 @@ export default function AdminDocuments() {
         </p>
       )}
       {!loading && !error && documents.length === 0 && (
-        <p className="rounded-lg border border-dashed border-rule px-4 py-10 text-center text-muted">No documents yet. Upload a PDF above to make it searchable for students.</p>
+        <div className="rounded-lg border border-dashed border-rule px-4 py-10 text-center">
+          <p className="font-medium">Your knowledge base is empty</p>
+          <p className="mt-1 text-sm text-muted">Choose a PDF above to make it searchable for students.</p>
+        </div>
       )}
       {documents.length > 0 && <DocumentTable documents={documents} onDelete={(d) => { setDeleteError(null); setToDelete(d); }} />}
 

@@ -7,3 +7,4 @@ import { chatSchema } from '../utils/schemas';
 
 export const chatRoutes = Router();
 chatRoutes.post('/', authenticate, validate(chatSchema), h(chatController.send));
+chatRoutes.post('/stream', authenticate, validate(chatSchema), h(chatController.stream));
