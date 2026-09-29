@@ -41,13 +41,35 @@ export class PythonRagService implements RagService {
     };
   }
 
+  private async fetchWithColdStartRetry(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<Response> {
+    const retryDelays = [2_000, 10_000, 30_000];
+
+    for (let attempt = 0; ; attempt += 1) {
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+      const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
+      let response: Response;
+
+      try {
+        response = await fetch(url, { ...init, signal: requestSignal });
+      } catch (error) {
+        if (signal?.aborted || attempt >= retryDelays.length) throw error;
+        await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+        continue;
+      }
+
+      if (![502, 503, 504].includes(response.status) || attempt >= retryDelays.length) return response;
+
+      await response.arrayBuffer().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+    }
+  }
+
   private async call<T>(method: string, path: string, body: unknown, timeoutMs: number): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, {
+    const res = await this.fetchWithColdStartRetry(`${this.base}${path}`, {
       method,
       headers: this.headers(body ? 'application/json' : undefined),
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       throw new Error(`RAG service ${method} ${path} failed with ${res.status}: ${detail.slice(0, 300)}`);
@@ -88,14 +110,11 @@ export class PythonRagService implements RagService {
   }
 
   async *streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent> {
-    const timeoutSignal = AbortSignal.timeout(env.RAG_TIMEOUT_MS);
-    const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
-    const res = await fetch(`${this.base}/query/stream`, {
+    const res = await this.fetchWithColdStartRetry(`${this.base}/query/stream`, {
       method: 'POST',
       headers: this.headers('application/json'),
       body: JSON.stringify({ question: input.question, history: input.history ?? [] }),
-      signal: requestSignal,
-    });
+    }, env.RAG_TIMEOUT_MS, signal);
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       throw new Error(`RAG service POST /query/stream failed with ${res.status}: ${detail.slice(0, 300)}`);

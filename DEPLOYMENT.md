@@ -36,6 +36,11 @@ For Neon, use the provider's SSL-enabled connection string. The Node backend ena
 
 Create a Render service with root directory `Rag_project`.
 
+Use a Render **Web Service**, not a Background Worker. The Node backend must use
+the Python service's Render URL in `PYTHON_RAG_URL` (including `https://` and
+without `/api`). A request to `/query` or `/query/stream` wakes a sleeping free
+Web Service; the backend waits up to 120 seconds for that cold start.
+
 Build command:
 
 ```text
@@ -117,7 +122,7 @@ JWT_EXPIRES_IN=7d
 RAG_MODE=real
 PYTHON_RAG_URL=<private/internal Python service URL>
 RAG_SERVICE_TOKEN=<same token configured on Python>
-RAG_TIMEOUT_MS=60000
+RAG_TIMEOUT_MS=120000
 RAG_INGEST_TIMEOUT_MS=600000
 CHAT_RATE_LIMIT_WINDOW_MS=900000
 CHAT_RATE_LIMIT_MAX=30
