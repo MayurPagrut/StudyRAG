@@ -14,7 +14,7 @@ const schema = z
     PYTHON_RAG_URL: z.string().url().optional(),
     RAG_SERVICE_URL: z.string().url().optional(),
     RAG_SERVICE_TOKEN: z.string().min(1).optional(),
-    RAG_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+    RAG_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
     RAG_INGEST_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
     MOCK_RAG_SOURCES: z.enum(['true', 'false']).default('false'),
     CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
