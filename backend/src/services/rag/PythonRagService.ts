@@ -36,6 +36,7 @@ export class PythonRagService implements RagService {
   private readonly readinessAttempts = 20;
   private readonly readinessDelayMs = 3_000;
   private readonly readinessTimeoutMs = 5_000;
+  private readinessPromise: Promise<void> | null = null;
 
   private headers(contentType?: string): HeadersInit {
     return {
@@ -60,18 +61,17 @@ export class PythonRagService implements RagService {
     });
   }
 
-  async waitForRagReady(signal?: AbortSignal): Promise<void> {
+  private async pollUntilRagReady(): Promise<void> {
     console.log('[RAG] Checking Python service readiness...');
 
     for (let attempt = 1; attempt <= this.readinessAttempts; attempt += 1) {
       const timeoutSignal = AbortSignal.timeout(this.readinessTimeoutMs);
-      const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
 
       try {
         const response = await fetch(`${this.base}/health`, {
           method: 'GET',
           headers: this.headers(),
-          signal: requestSignal,
+          signal: timeoutSignal,
         });
 
         if (response.ok) {
@@ -79,19 +79,39 @@ export class PythonRagService implements RagService {
           return;
         }
 
+        console.warn(`[RAG] Python health returned HTTP ${response.status}`);
         await response.arrayBuffer().catch(() => undefined);
       } catch (error) {
-        if (signal?.aborted) throw error;
+        const reason = error instanceof Error ? error.name : 'unknown error';
+        console.warn(`[RAG] Python health check failed: ${reason}`);
       }
 
       if (attempt < this.readinessAttempts) {
         console.log(`[RAG] Python service not ready, retry ${attempt}/${this.readinessAttempts}`);
-        await this.waitForDelay(signal);
+        await this.waitForDelay();
       }
     }
 
     console.error('[RAG] Python service did not become ready after 20 attempts');
     throw new RagServiceNotReadyError();
+  }
+
+  async waitForRagReady(signal?: AbortSignal): Promise<void> {
+    if (!this.readinessPromise) {
+      this.readinessPromise = this.pollUntilRagReady().finally(() => {
+        this.readinessPromise = null;
+      });
+    }
+
+    if (!signal) return this.readinessPromise;
+    if (signal.aborted) throw new Error('RAG readiness check cancelled');
+
+    return Promise.race([
+      this.readinessPromise,
+      new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('RAG readiness check cancelled')), { once: true });
+      }),
+    ]);
   }
 
   private async fetchWithColdStartRetry(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<Response> {
