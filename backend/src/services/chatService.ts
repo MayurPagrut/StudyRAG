@@ -3,7 +3,7 @@ import { messageRepository } from '../repositories/messageRepository';
 import { ragService } from './rag';
 import { RagSource, User } from '../types';
 import { AppError } from '../utils/AppError';
-import { RagStreamEvent, SourceMode } from './rag/RagService';
+import { RagServiceNotReadyError, RagStreamEvent, SourceMode } from './rag/RagService';
 
 const HISTORY_LIMIT = 10;
 const DEFAULT_TITLE = 'New chat';
@@ -38,6 +38,7 @@ export const chatService = {
 
     let result;
     try {
+      await ragService.waitForRagReady();
       result = await ragService.query({
         question: input.question,
         conversationId: conversation.id,
@@ -48,6 +49,9 @@ export const chatService = {
       // Undo the user turn so the conversation never contains an unanswered question.
       await messageRepository.remove(userMessage.id);
       if (isFirstMessage) await conversationRepository.remove(conversation.id, user.id);
+      if (err instanceof RagServiceNotReadyError) {
+        throw new AppError(503, 'RAG_STARTING', err.message);
+      }
       throw new AppError(502, 'RAG_UNAVAILABLE', 'The answer service is not responding. Please try again in a moment.');
     }
 
@@ -89,6 +93,7 @@ export const chatService = {
     let sourceMode: SourceMode = 'rag';
 
     try {
+      await ragService.waitForRagReady(signal);
       yield {
         type: 'start',
         conversationId: conversation.id,
@@ -129,6 +134,9 @@ export const chatService = {
       };
     } catch (err) {
       if (err instanceof AppError) throw err;
+      if (err instanceof RagServiceNotReadyError) {
+        throw new AppError(503, 'RAG_STARTING', err.message);
+      }
       console.error('[rag.streamQuery failed]', err);
       throw new AppError(502, 'RAG_UNAVAILABLE', 'The answer service is not responding. Please try again in a moment.');
     } finally {

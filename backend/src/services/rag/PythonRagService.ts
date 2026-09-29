@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { env } from '../../config/env';
 import { documentRepository } from '../../repositories/documentRepository';
-import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagSource, RagStreamEvent, SourceMode } from './RagService';
+import { RagDeleteRef, RagIngestInput, RagIngestResult, RagQueryInput, RagQueryResult, RagService, RagServiceNotReadyError, RagSource, RagStreamEvent, SourceMode } from './RagService';
 
 /**
  * HTTP adapter for the existing Python RAG (RAG_MODE=real).
@@ -33,12 +33,65 @@ interface PyStreamEvent {
 
 export class PythonRagService implements RagService {
   private readonly base = (env.PYTHON_RAG_URL ?? env.RAG_SERVICE_URL ?? '').replace(/\/$/, '');
+  private readonly readinessAttempts = 20;
+  private readonly readinessDelayMs = 3_000;
+  private readonly readinessTimeoutMs = 5_000;
 
   private headers(contentType?: string): HeadersInit {
     return {
       ...(contentType ? { 'Content-Type': contentType } : {}),
       ...(env.RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${env.RAG_SERVICE_TOKEN}` } : {}),
     };
+  }
+
+  private async waitForDelay(signal?: AbortSignal): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, this.readinessDelayMs);
+      if (!signal) return;
+      const abort = () => {
+        clearTimeout(timer);
+        reject(new Error('RAG readiness check cancelled'));
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  async waitForRagReady(signal?: AbortSignal): Promise<void> {
+    console.log('[RAG] Checking Python service readiness...');
+
+    for (let attempt = 1; attempt <= this.readinessAttempts; attempt += 1) {
+      const timeoutSignal = AbortSignal.timeout(this.readinessTimeoutMs);
+      const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
+
+      try {
+        const response = await fetch(`${this.base}/health`, {
+          method: 'GET',
+          headers: this.headers(),
+          signal: requestSignal,
+        });
+
+        if (response.ok) {
+          console.log('[RAG] Python service is ready');
+          return;
+        }
+
+        await response.arrayBuffer().catch(() => undefined);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+      }
+
+      if (attempt < this.readinessAttempts) {
+        console.log(`[RAG] Python service not ready, retry ${attempt}/${this.readinessAttempts}`);
+        await this.waitForDelay(signal);
+      }
+    }
+
+    console.error('[RAG] Python service did not become ready after 20 attempts');
+    throw new RagServiceNotReadyError();
   }
 
   private async fetchWithColdStartRetry(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<Response> {
@@ -92,6 +145,7 @@ export class PythonRagService implements RagService {
   }
 
   async query(input: RagQueryInput): Promise<RagQueryResult> {
+    console.log('[RAG] Sending /query');
     const data = await this.call<PyQueryResponse>('POST', '/query', { question: input.question, history: input.history ?? [] }, env.RAG_TIMEOUT_MS);
 
     const sources: RagSource[] = [];
@@ -110,6 +164,7 @@ export class PythonRagService implements RagService {
   }
 
   async *streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent> {
+    console.log('[RAG] Sending /query/stream');
     const res = await this.fetchWithColdStartRetry(`${this.base}/query/stream`, {
       method: 'POST',
       headers: this.headers('application/json'),

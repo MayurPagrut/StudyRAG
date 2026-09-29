@@ -10,6 +10,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Every answer is explicitly labelled so it cannot be mistaken for real output.
  */
 export class MockRagService implements RagService {
+  async waitForRagReady(): Promise<void> {}
+
   async query(input: RagQueryInput): Promise<RagQueryResult> {
     await sleep(600);
     const answer =

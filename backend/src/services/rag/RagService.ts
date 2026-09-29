@@ -28,6 +28,13 @@ export type RagStreamEvent =
   | { type: 'sources'; sources: RagSource[] }
   | { type: 'source_mode'; source_mode: SourceMode };
 
+export class RagServiceNotReadyError extends Error {
+  constructor() {
+    super('RAG service is currently starting. Please try again.');
+    this.name = 'RagServiceNotReadyError';
+  }
+}
+
 export interface RagIngestInput {
   /** App document id (app.documents.id, UUID). */
   documentId: string;
@@ -49,6 +56,7 @@ export interface RagDeleteRef {
 }
 
 export interface RagService {
+  waitForRagReady(signal?: AbortSignal): Promise<void>;
   query(input: RagQueryInput): Promise<RagQueryResult>;
   streamQuery(input: RagQueryInput, signal?: AbortSignal): AsyncIterable<RagStreamEvent>;
   ingestDocument(input: RagIngestInput): Promise<RagIngestResult>;
