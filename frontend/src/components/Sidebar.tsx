@@ -22,7 +22,7 @@ export function Sidebar({ conversations, loading, error, open, onClose, onNew, o
       {open && <div className="fixed inset-0 z-30 bg-ink/40 md:hidden" onClick={onClose} aria-hidden />}
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-side text-white transition-transform md:static md:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between px-4 pt-4">
-          <span className="font-serif text-lg font-semibold">Study Desk</span>
+          <span className="font-serif text-lg font-semibold">Naitik's Desk</span>
           <button onClick={onClose} className="rounded p-1 hover:bg-white/10 md:hidden" aria-label="Close menu"><Icon name="x" /></button>
         </div>
         <button onClick={onNew} className="mx-4 mt-4 flex items-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm font-medium hover:bg-white/20">

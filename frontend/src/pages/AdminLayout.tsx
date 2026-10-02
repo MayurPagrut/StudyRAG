@@ -10,7 +10,7 @@ export default function AdminLayout() {
     <div className="flex min-h-full flex-col">
       <header className="bg-side text-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <span className="font-serif text-lg font-semibold">Study Desk <span className="font-sans text-sm font-normal text-white/60">Admin</span></span>
+          <span className="font-serif text-lg font-semibold">Naitik's Desk <span className="font-sans text-sm font-normal text-white/60">Admin</span></span>
           <nav className="flex gap-1" aria-label="Admin">
             <NavLink to="/admin" end className={link}>Overview</NavLink>
             <NavLink to="/admin/documents" className={link}>Documents</NavLink>

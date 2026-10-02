@@ -4,7 +4,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
   return (
     <div className="grid min-h-full md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <div className="hidden flex-col justify-between bg-side p-10 text-white md:flex">
-        <span className="font-serif text-lg font-semibold">Study Desk</span>
+        <span className="font-serif text-lg font-semibold">Naitik's Desk</span>
         <p className="max-w-sm font-serif text-3xl leading-snug">Ask a question. Get an answer with the page it came from.</p>
       </div>
       <main className="flex items-center justify-center p-6">
